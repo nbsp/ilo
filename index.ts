@@ -73,6 +73,7 @@ export default (app: Probot) => {
         try {
           files = fs.readdirSync(packagePath);
         } catch (error) {
+          console.error(error)
           return false;
         }
 
@@ -85,6 +86,7 @@ export default (app: Probot) => {
               return false;
             }
           } catch (error) {
+            console.error(error)
             return false;
           }
         });
@@ -98,7 +100,8 @@ export default (app: Probot) => {
         try {
           const content = fs.readFileSync(path.join(pkg, ".nanparc"));
           version = /\bversion *(.*) *.*/.exec(content.toString())![0];
-        } catch {
+        } catch (error) {
+          console.error(error)
           return acc;
         }
 
@@ -107,7 +110,8 @@ export default (app: Probot) => {
         let files: string[] = [];
         try {
           files = fs.readdirSync(packagePath);
-        } catch {
+        } catch (error) {
+          console.error(error)
           return acc;
         }
 
@@ -153,7 +157,8 @@ export default (app: Probot) => {
                   break;
               }
             }
-          } catch {
+          } catch (error) {
+            console.error(error)
             return acc;
           }
         });
@@ -164,7 +169,8 @@ export default (app: Probot) => {
           let files: string[] = [];
           try {
             files = fs.readdirSync(packagePath);
-          } catch {
+          } catch (error) {
+            console.error(error)
             return acc;
           }
 
@@ -216,7 +222,8 @@ export default (app: Probot) => {
                     break;
                 }
               }
-            } catch {
+            } catch (error) {
+              console.error(error)
               return acc;
             }
           });
@@ -310,7 +317,7 @@ export default (app: Probot) => {
         creator: botLogin + "[bot]",
       });
 
-      if (srcPackages.length == 0) {
+      if (Object.entries(updates).length == 0) {
         title = "bump: nothing staged";
         body =
           "ilo could not detect nanpa changesets files in this repository. when you add some, you'll see them here.\n" +
@@ -326,7 +333,7 @@ export default (app: Probot) => {
           body,
         });
       } else {
-        if (srcPackages.length > 0) {
+        if (Object.entries(updates).length > 0) {
           await context.octokit.issues.create({
             owner: repo.owner,
             repo: repo.repo,
@@ -336,7 +343,7 @@ export default (app: Probot) => {
         }
       }
     } catch (error) {
-      context.log.error(`Error processing files: ${error}`);
+      console.error(error);
     }
   });
 
@@ -372,7 +379,7 @@ export default (app: Probot) => {
           inputs,
         });
       } catch (error) {
-        context.log.error(`Error dispatching workflow: ${error}`);
+        console.error(error)
       }
     }
   });
