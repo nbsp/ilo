@@ -91,8 +91,9 @@ export default (app: Probot) => {
               .then((result) =>
                 "content" in result.data ? result.data.content : "",
               )
+              .then((result) => Buffer.from(result, "base64").toString())
               .then((content) => parse(content).output!);
-            if ((query(content, "prop(package)") as string[]).length > 0) {
+            if ((query(content, "[prop(package)]") as string[]).length > 0) {
               return false;
             }
           });
@@ -107,14 +108,17 @@ export default (app: Probot) => {
           const changesets: Changesets = {};
 
           let version = /\bversion *(.*) *.*/.exec(
-            (
-              await context.octokit.repos.getContent({
+            await context.octokit.repos
+              .getContent({
                 owner: repo.owner,
                 repo: repo.repo,
                 tree_sha: baseBranch,
                 path: path.join(pkg, ".nanparc"),
               })
-            ).data.toString(),
+              .then((result) =>
+                "content" in result.data ? result.data.content : "",
+              )
+              .then((result) => Buffer.from(result, "base64").toString()),
           )![0];
 
           // get changesets from inside package
@@ -137,9 +141,10 @@ export default (app: Probot) => {
               .then((result) =>
                 "content" in result.data ? result.data.content : "",
               )
+              .then((result) => Buffer.from(result, "base64").toString())
               .then((content) => parse(content).output!);
 
-            for (const node of query(content, "top()") as ChangesetNode[]) {
+            for (const node of query(content, "top()")[0].children as ChangesetNode[]) {
               switch (node.name) {
                 case "major":
                   bump = 3;
@@ -198,9 +203,10 @@ export default (app: Probot) => {
                 .then((result) =>
                   "content" in result.data ? result.data.content : "",
                 )
+                .then((result) => Buffer.from(result, "base64").toString())
                 .then((content) => parse(content).output!);
 
-              for (const node of query(content, "top()") as ChangesetNode[]) {
+              for (const node of query(content, "top()")[0].children as ChangesetNode[]) {
                 if (
                   !node.properties.package ||
                   path.join(spkg, node.properties.package) !== pkg
