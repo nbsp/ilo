@@ -47,7 +47,9 @@ jobs:
           args: changeset ${{ steps.path.outputs.path }} -y
  
       - name: Diff git repository
-        run: git diff > ${{ matrix.package }}.diff
+        run: |
+          git add -N .
+          git diff > ${{ matrix.package }}.diff
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
