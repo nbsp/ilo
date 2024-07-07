@@ -31,7 +31,7 @@ interface ChangesetNode {
 }
 
 export default (app: Probot) => {
-  // create PR if nanpa changesets exist
+  // create issue if nanpa changesets exist
   app.on("push", async (context) => {
     const repo = context.repo();
     const glob = "**/.nanpa/*.kdl";
@@ -257,7 +257,7 @@ export default (app: Probot) => {
 
       let body =
         "ilo has detected nanpa changesets files in this repository.\n" +
-        `Choose which packages you wish to update from the checkboxes below, and merge this pull request to start a CI build on \`${baseBranch}\`.\n` +
+        `Choose which packages you wish to update from the checkboxes below, and close this issue to start a CI build on \`${baseBranch}\`.\n` +
         "For more information, refer to the [nanpa](https://github.com/nbsp/nanpa) and [ilo](https://github.com/nbsp/ilo) repositories.";
 
       Object.entries(updates).forEach((update) => {
@@ -304,38 +304,27 @@ export default (app: Probot) => {
       }
 
       if (packages.length > 0) {
-        const openPRs = await context.octokit.pulls.list({
+        const openIssues = await context.octokit.issues.listForRepo({
           owner: repo.owner,
           repo: repo.repo,
           state: "open",
         });
-        const alreadyOpen = openPRs.data.find(
-          (pr) => pr.user?.login === botLogin,
+        const alreadyOpen = openIssues.data.find(
+          (issue) => issue.user?.login === botLogin,
         );
 
         if (alreadyOpen) {
-          await context.octokit.pulls.update({
+          await context.octokit.issues.update({
             owner: repo.owner,
             repo: repo.repo,
-            pull_number: alreadyOpen.number,
+            issue_number: alreadyOpen.number,
             title,
             body,
           });
         } else {
-          const branch = "nanpa/bump";
-
-          await context.octokit.git.createRef({
+          await context.octokit.issues.create({
             owner: repo.owner,
             repo: repo.repo,
-            ref: `refs/heads/${branch}`,
-            sha: context.payload.after,
-          });
-
-          await context.octokit.pulls.create({
-            owner: repo.owner,
-            repo: repo.repo,
-            head: branch,
-            base: baseBranch,
             title,
             body,
           });
@@ -346,35 +335,32 @@ export default (app: Probot) => {
     }
   });
 
-  app.on("pull_request.closed", async (context) => {
-    const pullRequest = context.payload.pull_request;
-    if (pullRequest.merged) {
-      try {
-        // Fetch the workflow id from the repository secrets
-        const workflow_id = process.env.NANPA_WORKFLOW;
-        if (!workflow_id) {
-          context.log.error("NANPA_WORKFLOW secret is not set");
-          return;
-        }
-
-        // get packages to update
-        const packages = Array.from(
-          /- \[x\] (.*)\n/.exec(pullRequest.body!)?.entries() || [],
-        ).map((x) => x[1]);
-        const inputs = {
-          packages,
-        };
-
-        await context.octokit.actions.createWorkflowDispatch({
-          owner: context.payload.repository.owner.login,
-          repo: context.payload.repository.name,
-          workflow_id,
-          ref: context.payload.repository.default_branch,
-          inputs,
-        });
-      } catch (error) {
-        context.log.error(`Error dispatching workflow: ${error}`);
+  app.on("issues.closed", async (context) => {
+    try {
+      // Fetch the workflow id from the repository secrets
+      const workflow_id = process.env.NANPA_WORKFLOW;
+      if (!workflow_id) {
+        context.log.error("NANPA_WORKFLOW secret is not set");
+        return;
       }
+
+      // get packages to update
+      const packages = Array.from(
+        /- \[x\] (.*)\n/.exec(context.payload.issue.body!)?.entries() || [],
+      ).map((x) => x[1]);
+      const inputs = {
+        packages,
+      };
+
+      await context.octokit.actions.createWorkflowDispatch({
+        owner: context.payload.repository.owner.login,
+        repo: context.payload.repository.name,
+        workflow_id,
+        ref: context.payload.repository.default_branch,
+        inputs,
+      });
+    } catch (error) {
+      context.log.error(`Error dispatching workflow: ${error}`);
     }
   });
 };
