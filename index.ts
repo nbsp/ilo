@@ -307,28 +307,26 @@ export default (app: Probot) => {
         owner: repo.owner,
         repo: repo.repo,
         state: "open",
+        creator: botLogin,
       });
-      const alreadyOpen = openIssues.data.find(
-        (issue) => issue.user?.login === botLogin,
-      );
 
-      if (packages.length == 0) {
+      if (srcPackages.length == 0) {
         title = "bump: nothing staged";
         body =
           "ilo could not detect nanpa changesets files in this repository. when you add some, you'll see them here.\n" +
           "For more information, refer to the [nanpa](https://github.com/nbsp/nanpa) and [ilo](https://github.com/nbsp/ilo) repositories.";
       }
 
-      if (alreadyOpen) {
+      if (openIssues.data.length > 0) {
         await context.octokit.issues.update({
           owner: repo.owner,
           repo: repo.repo,
-          issue_number: alreadyOpen.number,
+          issue_number: openIssues.data[0].number,
           title,
           body,
         });
       } else {
-        if (packages.length > 0) {
+        if (srcPackages.length > 0) {
           await context.octokit.issues.create({
             owner: repo.owner,
             repo: repo.repo,
