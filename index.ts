@@ -253,12 +253,12 @@ export default (app: Probot) => {
         return acc;
       }, {});
 
-      const title = `bump: ${Object.keys(updates).join(", ")}`;
+      let title = `bump: ${Object.keys(updates).join(", ")}`;
 
       let body =
         "ilo has detected nanpa changesets files in this repository.\n" +
         `Choose which packages you wish to update from the checkboxes below, and close this issue to start a CI build on \`${baseBranch}\`.\n` +
-        "For more information, refer to the [nanpa](https://github.com/nbsp/nanpa) and [ilo](https://github.com/nbsp/ilo) repositories.";
+        "For more information, refer to the [nanpa](https://github.com/nbsp/nanpa) and [ilo](https://github.com/nbsp/ilo) repositories.\n\n";
 
       Object.entries(updates).forEach((update) => {
         const [name, { version, changesets }] = update;
@@ -303,25 +303,32 @@ export default (app: Probot) => {
         body += `- [x] \`${pkg}\``;
       }
 
-      if (packages.length > 0) {
-        const openIssues = await context.octokit.issues.listForRepo({
+      const openIssues = await context.octokit.issues.listForRepo({
+        owner: repo.owner,
+        repo: repo.repo,
+        state: "open",
+      });
+      const alreadyOpen = openIssues.data.find(
+        (issue) => issue.user?.login === botLogin,
+      );
+
+      if (packages.length == 0) {
+        title = "bump: nothing staged";
+        body =
+          "ilo could not detect nanpa changesets files in this repository. when you add some, you'll see them here.\n" +
+          "For more information, refer to the [nanpa](https://github.com/nbsp/nanpa) and [ilo](https://github.com/nbsp/ilo) repositories.";
+      }
+
+      if (alreadyOpen) {
+        await context.octokit.issues.update({
           owner: repo.owner,
           repo: repo.repo,
-          state: "open",
+          issue_number: alreadyOpen.number,
+          title,
+          body,
         });
-        const alreadyOpen = openIssues.data.find(
-          (issue) => issue.user?.login === botLogin,
-        );
-
-        if (alreadyOpen) {
-          await context.octokit.issues.update({
-            owner: repo.owner,
-            repo: repo.repo,
-            issue_number: alreadyOpen.number,
-            title,
-            body,
-          });
-        } else {
+      } else {
+        if (packages.length > 0) {
           await context.octokit.issues.create({
             owner: repo.owner,
             repo: repo.repo,
