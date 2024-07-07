@@ -345,4 +345,36 @@ export default (app: Probot) => {
       context.log.error(`Error processing files: ${error}`);
     }
   });
+
+  app.on("pull_request.closed", async (context) => {
+    const pullRequest = context.payload.pull_request;
+    if (pullRequest.merged) {
+      try {
+        // Fetch the workflow id from the repository secrets
+        const workflow_id = process.env.NANPA_WORKFLOW;
+        if (!workflow_id) {
+          context.log.error("NANPA_WORKFLOW secret is not set");
+          return;
+        }
+
+        // get packages to update
+        const packages = Array.from(
+          /- \[x\] (.*)\n/.exec(pullRequest.body!)?.entries() || [],
+        ).map((x) => x[1]);
+        const inputs = {
+          packages,
+        };
+
+        await context.octokit.actions.createWorkflowDispatch({
+          owner: context.payload.repository.owner.login,
+          repo: context.payload.repository.name,
+          workflow_id,
+          ref: context.payload.repository.default_branch,
+          inputs,
+        });
+      } catch (error) {
+        context.log.error(`Error dispatching workflow: ${error}`);
+      }
+    }
+  });
 };
