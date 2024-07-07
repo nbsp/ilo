@@ -1,10 +1,13 @@
 # ilo
 pull request bot for nanpa, the language-agnostic release manager
 
+built with [Probot](https://probot.github.io). refer to their website for information on running this yourself.
+
+deployed on vercel.
+
 ## installation
 
 [click here](https://github.com/apps/ilo-nanpa) to install this bot.
-built with [Probot](https://probot.github.io). refer to their website for information on running this yourself.
 
 ## action
 
