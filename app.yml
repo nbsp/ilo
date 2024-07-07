@@ -1,0 +1,10 @@
+default_events:
+  - pull_request
+
+default_permissions:
+  metadata: read
+  pull_requests: write
+  contents: read
+
+description: pull request bot for nanpa, the language-agnostic release manager
+public: true
