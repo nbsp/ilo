@@ -2,7 +2,6 @@ import { Probot } from "probot";
 import { parse, query } from "kdljs";
 import micromatch from "micromatch";
 import path from "path";
-import fs from "fs";
 import semver from "semver";
 
 interface PackageVersions {
@@ -35,7 +34,11 @@ export default (app: Probot) => {
   app.on("push", async (context) => {
     const repo = context.repo();
     const glob = "**/.nanpa/*.kdl";
-    const botLogin = (await context.octokit.apps.getInstallation({ installation_id: context.payload.installation!.id })).data.app_slug;
+    const botLogin = (
+      await context.octokit.apps.getInstallation({
+        installation_id: context.payload.installation!.id,
+      })
+    ).data.app_slug;
 
     try {
       const baseBranch = (
@@ -60,6 +63,7 @@ export default (app: Probot) => {
       const packages = [
         ...new Set(
           micromatch(filePaths, glob).map((filePath) => {
+            if (filePath.startsWith(".nanpa")) return "";
             const parts = filePath.split("/");
             return parts.slice(0, parts.indexOf(".nanpa") + 1).join("/");
           }),
@@ -67,59 +71,74 @@ export default (app: Probot) => {
       ];
 
       // only get packages that aren't superpackages
-      const srcPackages = packages.filter((pkg) => {
-        const packagePath = path.join(pkg, ".nanpa");
-        let files: string[] = [];
-        try {
-          files = fs.readdirSync(packagePath);
-        } catch (error) {
-          console.error(error)
-          return false;
-        }
-
-        const matchedFiles = micromatch(files, "*.kdl");
-        return matchedFiles.some((file) => {
-          const filePath = path.join(packagePath, file);
-          try {
-            const content = parse(fs.readFileSync(filePath, "utf8")).output!;
+      const srcPackages = await Promise.all(
+        packages.filter(async (pkg) => {
+          const packagePath = path.join(pkg, ".nanpa");
+          const matchedFiles = tree.data.tree.filter(
+            (x) =>
+              x.path &&
+              x.path.startsWith(packagePath) &&
+              x.path.endsWith(".kdl"),
+          );
+          return matchedFiles.some(async (file) => {
+            const content = await context.octokit.repos
+              .getContent({
+                owner: repo.owner,
+                repo: repo.repo,
+                tree_sha: baseBranch,
+                path: file.path!,
+              })
+              .then((result) =>
+                "content" in result.data ? result.data.content : "",
+              )
+              .then((content) => parse(content).output!);
             if ((query(content, "prop(package)") as string[]).length > 0) {
               return false;
             }
-          } catch (error) {
-            console.error(error)
-            return false;
-          }
-        });
-      });
+          });
+        }),
+      );
       const superPackages = packages.filter((pkg) => !(pkg in srcPackages));
 
-      const updates = srcPackages.reduce((acc: PackageVersions, pkg) => {
-        let bump = 1;
-        const changesets: Changesets = {};
-        let version = "";
-        try {
-          const content = fs.readFileSync(path.join(pkg, ".nanparc"));
-          version = /\bversion *(.*) *.*/.exec(content.toString())![0];
-        } catch (error) {
-          console.error(error)
-          return acc;
-        }
+      const updates = await srcPackages.reduce(
+        async (accPromise: Promise<PackageVersions>, pkg) => {
+          const acc = await accPromise;
+          let bump = 1;
+          const changesets: Changesets = {};
 
-        // get changesets from inside package
-        const packagePath = path.join(pkg, ".nanpa");
-        let files: string[] = [];
-        try {
-          files = fs.readdirSync(packagePath);
-        } catch (error) {
-          console.error(error)
-          return acc;
-        }
+          let version = /\bversion *(.*) *.*/.exec(
+            (
+              await context.octokit.repos.getContent({
+                owner: repo.owner,
+                repo: repo.repo,
+                tree_sha: baseBranch,
+                path: path.join(pkg, ".nanparc"),
+              })
+            ).data.toString(),
+          )![0];
 
-        const matchedFiles = micromatch(files, "*.kdl");
-        matchedFiles.forEach((file) => {
-          const filePath = path.join(packagePath, file);
-          try {
-            const content = parse(fs.readFileSync(filePath, "utf8")).output!;
+          // get changesets from inside package
+          const packagePath = path.join(pkg, ".nanpa");
+          const matchedFiles = tree.data.tree.filter(
+            (x) =>
+              x.path &&
+              x.path.startsWith(packagePath) &&
+              x.path.endsWith(".kdl"),
+          );
+
+          matchedFiles.forEach(async (file) => {
+            const content = await context.octokit.repos
+              .getContent({
+                owner: repo.owner,
+                repo: repo.repo,
+                tree_sha: baseBranch,
+                path: file.path!,
+              })
+              .then((result) =>
+                "content" in result.data ? result.data.content : "",
+              )
+              .then((content) => parse(content).output!);
+
             for (const node of query(content, "top()") as ChangesetNode[]) {
               switch (node.name) {
                 case "major":
@@ -157,28 +176,30 @@ export default (app: Probot) => {
                   break;
               }
             }
-          } catch (error) {
-            console.error(error)
-            return acc;
-          }
-        });
+          });
 
-        // get changesets from superpackages
-        superPackages.forEach((spkg) => {
-          const packagePath = path.join(spkg, ".nanpa");
-          let files: string[] = [];
-          try {
-            files = fs.readdirSync(packagePath);
-          } catch (error) {
-            console.error(error)
-            return acc;
-          }
+          // get changesets from superpackages
+          superPackages.forEach((spkg) => {
+            const packagePath = path.join(spkg, ".nanpa");
+            const matchedFiles = tree.data.tree.filter(
+              (x) =>
+                x.path &&
+                x.path.startsWith(packagePath) &&
+                x.path.endsWith(".kdl"),
+            );
+            matchedFiles.forEach(async (file) => {
+              const content = await context.octokit.repos
+                .getContent({
+                  owner: repo.owner,
+                  repo: repo.repo,
+                  tree_sha: baseBranch,
+                  path: file.path!,
+                })
+                .then((result) =>
+                  "content" in result.data ? result.data.content : "",
+                )
+                .then((content) => parse(content).output!);
 
-          const matchedFiles = micromatch(files, "*.kdl");
-          matchedFiles.forEach((file) => {
-            const filePath = path.join(packagePath, file);
-            try {
-              const content = parse(fs.readFileSync(filePath, "utf8")).output!;
               for (const node of query(content, "top()") as ChangesetNode[]) {
                 if (
                   !node.properties.package ||
@@ -222,43 +243,41 @@ export default (app: Probot) => {
                     break;
                 }
               }
-            } catch (error) {
-              console.error(error)
-              return acc;
-            }
+            });
           });
-        });
 
-        // bump version
-        switch (bump) {
-          case 1:
-            version = semver.inc(version, "patch")!;
-            break;
-          case 2:
-            version = semver.inc(version, "minor")!;
-            break;
-          case 3:
-            version = semver.inc(version, "major")!;
-            break;
-        }
+          // bump version
+          switch (bump) {
+            case 1:
+              version = semver.inc(version, "patch")!;
+              break;
+            case 2:
+              version = semver.inc(version, "minor")!;
+              break;
+            case 3:
+              version = semver.inc(version, "major")!;
+              break;
+          }
 
-        if (
-          !changesets.added &&
-          !changesets.changed &&
-          !changesets.deprecated &&
-          !changesets.fixed &&
-          !changesets.removed &&
-          !changesets.security
-        ) {
+          if (
+            !changesets.added &&
+            !changesets.changed &&
+            !changesets.deprecated &&
+            !changesets.fixed &&
+            !changesets.removed &&
+            !changesets.security
+          ) {
+            return acc;
+          }
+
+          acc[pkg] = {
+            version,
+            changesets,
+          };
           return acc;
-        }
-
-        acc[pkg] = {
-          version,
-          changesets,
-        };
-        return acc;
-      }, {});
+        },
+        Promise.resolve({}),
+      );
 
       let title = `bump: ${Object.keys(updates).join(", ")}`;
 
@@ -269,7 +288,7 @@ export default (app: Probot) => {
 
       Object.entries(updates).forEach((update) => {
         const [name, { version, changesets }] = update;
-        body += `## \`${name}\`: ${version}\n\n`;
+        body += `## \`${repo.repo}${name == "" ? "" : "/"}${name}\`: ${version}\n\n`;
 
         if (changesets.added) {
           body += "### Added\n\n";
@@ -348,11 +367,18 @@ export default (app: Probot) => {
   });
 
   app.on("issues.closed", async (context) => {
-    const thisIssue = (await context.octokit.issues.listForRepo({
-      owner: context.repo().owner,
-      repo: context.repo().repo,
-      creator: (await context.octokit.apps.getInstallation({ installation_id: context.payload.installation!.id })).data.app_slug + "[bot]",
-    })).data[0].number;
+    const thisIssue = (
+      await context.octokit.issues.listForRepo({
+        owner: context.repo().owner,
+        repo: context.repo().repo,
+        creator:
+          (
+            await context.octokit.apps.getInstallation({
+              installation_id: context.payload.installation!.id,
+            })
+          ).data.app_slug + "[bot]",
+      })
+    ).data[0].number;
     if (context.payload.issue.number == thisIssue) {
       try {
         // Fetch the workflow id from the repository secrets
@@ -379,7 +405,7 @@ export default (app: Probot) => {
           inputs,
         });
       } catch (error) {
-        console.error(error)
+        console.error(error);
       }
     }
   });
