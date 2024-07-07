@@ -1,0 +1,14 @@
+name: 'Run nanpa'
+description: 'Run nanpa, a language-agnostic release manager'
+author: 'aoife cassidy'
+inputs:
+  args:
+    description: 'Arguments to pass to the Rust binary'
+    required: false
+    default: ''
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  entrypoint: '/action/nanpa'
+  args: ${{ inputs.args }}
