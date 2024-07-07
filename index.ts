@@ -390,25 +390,31 @@ export default (app: Probot) => {
       })
     ).data.app_slug;
 
-    if (context.payload.issue.user.login == botLogin) {
+    if (context.payload.issue.user.login == botLogin + "[bot]") {
       try {
         // Fetch the workflow id from the repository secrets
-        const workflow_id = process.env.NANPA_WORKFLOW;
-        if (!workflow_id) {
+        const repo = context.repo();
+        const workflow_id = await context.octokit.actions
+          .getRepoVariable({
+            owner: repo.owner,
+            repo: repo.repo,
+            name: "NANPA_WORKFLOW",
+          })
+          .then((value) => value.data.value);
+        if (workflow_id == "") {
           context.log.error("NANPA_WORKFLOW secret is not set");
           return;
         }
 
         // get packages to update
-        const packages = Array.from(
-          Object.values(
-            /- \[x\] ([^\n ]+)\n/.exec(context.payload.issue.body!)?.groups ||
-              [],
-          ),
-        ).map((x) => x[1]);
+        const packages = [
+          ...context.payload.issue.body!.matchAll(/- \[x\] ([^\n ]+)\n?/g),
+        ]
+          .map((x) => x.slice(1))
+          .flat();
         if (packages.length == 0) return;
         const inputs = {
-          packages,
+          packages: JSON.stringify(packages),
         };
 
         await context.octokit.actions.createWorkflowDispatch({
