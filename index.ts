@@ -88,9 +88,10 @@ export default (app: Probot) => {
                 tree_sha: baseBranch,
                 path: file.path!,
               })
-              .then((result) =>
-                "content" in result.data ? result.data.content : "",
-              )
+              .then((result) => {
+                if (!("content" in result.data)) throw new Error();
+                return result.data.content;
+              })
               .then((result) => Buffer.from(result, "base64").toString())
               .then((content) => parse(content).output!);
             if ((query(content, "[prop(package)]") as string[]).length > 0) {
@@ -107,7 +108,7 @@ export default (app: Probot) => {
           let bump = 1;
           const changesets: Changesets = {};
 
-          let version = /\bversion *(.*) *.*/.exec(
+          let version = /(?<=version +)[^\n ]+(?= *\n?)/.exec(
             await context.octokit.repos
               .getContent({
                 owner: repo.owner,
@@ -115,9 +116,10 @@ export default (app: Probot) => {
                 tree_sha: baseBranch,
                 path: path.join(pkg, ".nanparc"),
               })
-              .then((result) =>
-                "content" in result.data ? result.data.content : "",
-              )
+              .then((result) => {
+                if (!("content" in result.data)) throw new Error();
+                return result.data.content;
+              })
               .then((result) => Buffer.from(result, "base64").toString()),
           )![0];
 
@@ -130,7 +132,7 @@ export default (app: Probot) => {
               x.path.endsWith(".kdl"),
           );
 
-          matchedFiles.forEach(async (file) => {
+          for (const file of matchedFiles) {
             const content = await context.octokit.repos
               .getContent({
                 owner: repo.owner,
@@ -138,13 +140,15 @@ export default (app: Probot) => {
                 tree_sha: baseBranch,
                 path: file.path!,
               })
-              .then((result) =>
-                "content" in result.data ? result.data.content : "",
-              )
+              .then((result) => {
+                if (!("content" in result.data)) throw new Error();
+                return result.data.content;
+              })
               .then((result) => Buffer.from(result, "base64").toString())
               .then((content) => parse(content).output!);
 
-            for (const node of query(content, "top()")[0].children as ChangesetNode[]) {
+            for (const node of query(content, "top()")[0]
+              .children as ChangesetNode[]) {
               switch (node.name) {
                 case "major":
                   bump = 3;
@@ -181,10 +185,10 @@ export default (app: Probot) => {
                   break;
               }
             }
-          });
+          }
 
           // get changesets from superpackages
-          superPackages.forEach((spkg) => {
+          for (const spkg of superPackages) {
             const packagePath = path.join(spkg, ".nanpa");
             const matchedFiles = tree.data.tree.filter(
               (x) =>
@@ -192,7 +196,7 @@ export default (app: Probot) => {
                 x.path.startsWith(packagePath) &&
                 x.path.endsWith(".kdl"),
             );
-            matchedFiles.forEach(async (file) => {
+            for (const file of matchedFiles) {
               const content = await context.octokit.repos
                 .getContent({
                   owner: repo.owner,
@@ -200,13 +204,15 @@ export default (app: Probot) => {
                   tree_sha: baseBranch,
                   path: file.path!,
                 })
-                .then((result) =>
-                  "content" in result.data ? result.data.content : "",
-                )
+                .then((result) => {
+                  if (!("content" in result.data)) throw new Error();
+                  return result.data.content;
+                })
                 .then((result) => Buffer.from(result, "base64").toString())
                 .then((content) => parse(content).output!);
 
-              for (const node of query(content, "top()")[0].children as ChangesetNode[]) {
+              for await (const node of query(content, "top()")[0]
+                .children as ChangesetNode[]) {
                 if (
                   !node.properties.package ||
                   path.join(spkg, node.properties.package) !== pkg
@@ -249,8 +255,8 @@ export default (app: Probot) => {
                     break;
                 }
               }
-            });
-          });
+            }
+          }
 
           // bump version
           switch (bump) {
@@ -276,7 +282,7 @@ export default (app: Probot) => {
             return acc;
           }
 
-          acc[pkg] = {
+          acc[`${repo.repo}/${pkg}`] = {
             version,
             changesets,
           };
@@ -294,7 +300,7 @@ export default (app: Probot) => {
 
       Object.entries(updates).forEach((update) => {
         const [name, { version, changesets }] = update;
-        body += `## \`${repo.repo}${name == "" ? "" : "/"}${name}\`: ${version}\n\n`;
+        body += `## ${name.endsWith("/") ? name.substring(0, name.length - 1) : name}@${version}\n\n`;
 
         if (changesets.added) {
           body += "### Added\n\n";
@@ -331,9 +337,10 @@ export default (app: Probot) => {
       });
 
       body += "# Packages to update\n";
-      for (const pkg of srcPackages) {
-        body += `- [x] \`${pkg}\``;
-      }
+      Object.entries(updates).forEach((update) => {
+        const [name, { version }] = update;
+        body += `- [x] ${name.endsWith("/") ? name.substring(0, name.length - 1) : name}@${version}`;
+      });
 
       const openIssues = await context.octokit.issues.listForRepo({
         owner: repo.owner,
@@ -396,7 +403,9 @@ export default (app: Probot) => {
 
         // get packages to update
         const packages = Array.from(
-          /- \[x\] (.*)\n/.exec(context.payload.issue.body!)?.entries() || [],
+          Object.values(
+            /- \[x\] ([^\n ]+)\n/.exec(context.payload.issue.body!)?.groups || [],
+          ),
         ).map((x) => x[1]);
         if (packages.length == 0) return;
         const inputs = {
