@@ -348,6 +348,7 @@ export default (app: Probot) => {
       const packages = Array.from(
         /- \[x\] (.*)\n/.exec(context.payload.issue.body!)?.entries() || [],
       ).map((x) => x[1]);
+      if (packages.length == 0) return;
       const inputs = {
         packages,
       };
