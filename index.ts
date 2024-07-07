@@ -291,7 +291,11 @@ export default (app: Probot) => {
         Promise.resolve({}),
       );
 
-      let title = `bump: ${Object.keys(updates).join(", ")}`;
+      let title = `bump: ${Object.keys(updates)
+        .map((name) =>
+          name.endsWith("/") ? name.substring(0, name.length - 1) : name,
+        )
+        .join(", ")}`;
 
       let body =
         "ilo has detected nanpa changesets files in this repository.\n" +
@@ -380,19 +384,13 @@ export default (app: Probot) => {
   });
 
   app.on("issues.closed", async (context) => {
-    const thisIssue = (
-      await context.octokit.issues.listForRepo({
-        owner: context.repo().owner,
-        repo: context.repo().repo,
-        creator:
-          (
-            await context.octokit.apps.getInstallation({
-              installation_id: context.payload.installation!.id,
-            })
-          ).data.app_slug + "[bot]",
+    const botLogin = (
+      await context.octokit.apps.getInstallation({
+        installation_id: context.payload.installation!.id,
       })
-    ).data[0].number;
-    if (context.payload.issue.number == thisIssue) {
+    ).data.app_slug;
+
+    if (context.payload.issue.user.login == botLogin) {
       try {
         // Fetch the workflow id from the repository secrets
         const workflow_id = process.env.NANPA_WORKFLOW;
@@ -404,7 +402,8 @@ export default (app: Probot) => {
         // get packages to update
         const packages = Array.from(
           Object.values(
-            /- \[x\] ([^\n ]+)\n/.exec(context.payload.issue.body!)?.groups || [],
+            /- \[x\] ([^\n ]+)\n/.exec(context.payload.issue.body!)?.groups ||
+              [],
           ),
         ).map((x) => x[1]);
         if (packages.length == 0) return;
