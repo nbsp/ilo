@@ -35,7 +35,7 @@ export default (app: Probot) => {
   app.on("push", async (context) => {
     const repo = context.repo();
     const glob = "**/.nanpa/*.kdl";
-    const botLogin = context.payload.repository.owner.login;
+    const botLogin = (await context.octokit.apps.getInstallation({ installation_id: context.payload.installation!.id })).data.app_slug;
 
     try {
       const baseBranch = (
@@ -307,7 +307,7 @@ export default (app: Probot) => {
         owner: repo.owner,
         repo: repo.repo,
         state: "open",
-        creator: botLogin,
+        creator: botLogin + "[bot]",
       });
 
       if (srcPackages.length == 0) {
@@ -341,32 +341,39 @@ export default (app: Probot) => {
   });
 
   app.on("issues.closed", async (context) => {
-    try {
-      // Fetch the workflow id from the repository secrets
-      const workflow_id = process.env.NANPA_WORKFLOW;
-      if (!workflow_id) {
-        context.log.error("NANPA_WORKFLOW secret is not set");
-        return;
+    const thisIssue = (await context.octokit.issues.listForRepo({
+      owner: context.repo().owner,
+      repo: context.repo().repo,
+      creator: (await context.octokit.apps.getInstallation({ installation_id: context.payload.installation!.id })).data.app_slug + "[bot]",
+    })).data[0].number;
+    if (context.payload.issue.number == thisIssue) {
+      try {
+        // Fetch the workflow id from the repository secrets
+        const workflow_id = process.env.NANPA_WORKFLOW;
+        if (!workflow_id) {
+          context.log.error("NANPA_WORKFLOW secret is not set");
+          return;
+        }
+
+        // get packages to update
+        const packages = Array.from(
+          /- \[x\] (.*)\n/.exec(context.payload.issue.body!)?.entries() || [],
+        ).map((x) => x[1]);
+        if (packages.length == 0) return;
+        const inputs = {
+          packages,
+        };
+
+        await context.octokit.actions.createWorkflowDispatch({
+          owner: context.payload.repository.owner.login,
+          repo: context.payload.repository.name,
+          workflow_id,
+          ref: context.payload.repository.default_branch,
+          inputs,
+        });
+      } catch (error) {
+        context.log.error(`Error dispatching workflow: ${error}`);
       }
-
-      // get packages to update
-      const packages = Array.from(
-        /- \[x\] (.*)\n/.exec(context.payload.issue.body!)?.entries() || [],
-      ).map((x) => x[1]);
-      if (packages.length == 0) return;
-      const inputs = {
-        packages,
-      };
-
-      await context.octokit.actions.createWorkflowDispatch({
-        owner: context.payload.repository.owner.login,
-        repo: context.payload.repository.name,
-        workflow_id,
-        ref: context.payload.repository.default_branch,
-        inputs,
-      });
-    } catch (error) {
-      context.log.error(`Error dispatching workflow: ${error}`);
     }
   });
 };
