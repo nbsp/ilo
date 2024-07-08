@@ -1,6 +1,8 @@
 # ilo
 issue bot for [nanpa](https://github.com/nbsp/nanpa), the language-agnostic release manager
 
+[![install app](https://img.shields.io/badge/app-ilo--nanpa-green)](https://github.com/apps/ilo-nanpa) ![GitHub Action](https://img.shields.io/badge/action-nbsp%2Filo%2Fnanpa%40v1-blue)
+
 built with [Probot](https://probot.github.io). refer to their website for information on running
 this yourself.
 
